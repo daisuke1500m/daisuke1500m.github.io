@@ -422,7 +422,8 @@ function makeRenderer(tree, canvas) {
 
     // カメラ:樹冠の大きさに合わせてなめらかにズーム
     const ch = crownH(t);
-    const viewM = Math.max(2.6, ch * 1.3, ch * 1.6 * (H / W) * 1.12);
+    // const viewM = Math.max(2.6, ch * 1.3, ch * 1.6 * (H / W) * 1.12);
+    const viewM = 13;
     const s = (H * 0.84) / viewM;
     const gy = H * 0.9, ox = W / 2 - 0.02 * ch * s;
     const sx = (x) => ox + x * s, sy = (y) => gy - y * s;
@@ -618,7 +619,7 @@ if (typeof document !== 'undefined') {
   } else {
     day = clampDay(dayIndexOf(new Date()));
   }
-
+  // comment
   setTimeout(() => {
     const tree = simulate();
     renderer = makeRenderer(tree, $('cv'));
