@@ -1,0 +1,1 @@
+# daisuke1500m.github.io
