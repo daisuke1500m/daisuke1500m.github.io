@@ -1,7 +1,631 @@
-<html>
-    <body>
-        <h1>test message. this page is for tree.</h1>
-        <canvas id="myCanvas" width="640" height="480"></canvas>
-        <script src="sketch.js"></script>
-    </body>
-</html>
+<title>一本桜プロトタイプ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column field-notebook — the tree stage first, then a single instrument panel (date, stats, slider), then short notes. */
+:root {
+  --bg: #eceee9;
+  --panel: #f7f8f4;
+  --fg: #23272a;
+  --muted: #646b66;
+  --line: #d3d8d0;
+  --accent: #b84a6e;
+  --accent-soft: #f3dbe3;
+  --font-display: "Zen Old Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141618; --panel: #1c1f21; --fg: #e5e8e3; --muted: #9aa19c;
+    --line: #2d3235; --accent: #e78aa8; --accent-soft: #3a2730; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141618; --panel: #1c1f21; --fg: #e5e8e3; --muted: #9aa19c;
+  --line: #2d3235; --accent: #e78aa8; --accent-soft: #3a2730; color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.7;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: 20px; }
+.eyebrow { margin: 0; font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; color: var(--muted); }
+h1 { margin: 4px 0 6px; font-family: var(--font-display); font-weight: 700; font-size: clamp(26px, 4.4vw, 38px); line-height: 1.25; text-wrap: balance; }
+.lede { margin: 0; max-width: 40em; color: var(--muted); }
+
+.stage { position: relative; border-radius: 6px; overflow: hidden; height: min(68vh, 560px); min-height: 340px; background: #dfe6ee; border: 1px solid var(--line); }
+.stage canvas { display: block; width: 100%; height: 100%; }
+[hidden] { display: none !important; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; color: #39403b; background: #e6eaee; }
+.season { position: absolute; top: 12px; right: 12px; padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,.82); color: #2a2f2c; font-weight: 700; font-size: 14px; letter-spacing: .06em; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; display: grid; gap: 16px; }
+.readout { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 28px; }
+.readout .date { font-family: var(--font-display); font-size: clamp(22px, 3.4vw, 30px); font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.lab { display: block; font-size: 11px; letter-spacing: .1em; color: var(--muted); }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0; }
+.stats div { min-width: 0; }
+.stats dt { font-size: 11px; letter-spacing: .1em; color: var(--muted); }
+.stats dd { margin: 0; font-family: var(--font-mono); font-size: 17px; font-variant-numeric: tabular-nums; }
+
+.slider { display: grid; gap: 2px; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; height: 28px; }
+.ticks { position: relative; height: 18px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.ticks span:first-child { transform: none; }
+.ticks span:last-child { transform: translateX(-100%); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button, input[type=date] {
+  font: inherit; font-size: 14px; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; min-width: 6.5em; }
+.controls .gap { flex: 1 1 auto; }
+
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 28px; }
+.notes h2 { margin: 0 0 4px; font-family: var(--font-display); font-size: 16px; }
+.notes p { margin: 0; font-size: 14px; color: var(--muted); }
+.notes code { font-family: var(--font-mono); font-size: 12.5px; background: var(--accent-soft); color: var(--fg); padding: 1px 5px; border-radius: 3px; }
+</style>
+
+<main class="wrap">
+  <header>
+    <p class="eyebrow">SOMEI-YOSHINO · SPACE COLONIZATION</p>
+    <h1>一本桜 成長プロトタイプ</h1>
+    <p class="lede">2026年10月20日に苗木を1本植えたと仮定して、指定した日付の樹形と季節の姿を計算します。スライダーで40年先まで動かせます。</p>
+  </header>
+
+  <section class="stage" id="stage" aria-label="桜の木の描画">
+    <canvas id="cv"></canvas>
+    <div class="season" id="season">—</div>
+    <div class="loading" id="loading">樹形を計算しています…</div>
+  </section>
+
+  <section class="panel" aria-label="日付の操作">
+    <div class="readout">
+      <div>
+        <span class="lab">観察日</span>
+        <output id="date" class="date">—</output>
+      </div>
+      <dl class="stats">
+        <div><dt>植樹から</dt><dd id="elapsed">—</dd></div>
+        <div><dt>樹高</dt><dd id="height">—</dd></div>
+        <div><dt>枝の節点</dt><dd id="nodes">—</dd></div>
+      </dl>
+    </div>
+    <div class="slider">
+      <label class="lab" for="day">日付スライダー</label>
+      <input type="range" id="day" min="0" max="14610" step="1" value="0">
+      <div class="ticks" id="ticks"></div>
+    </div>
+    <div class="controls">
+      <button type="button" class="primary" id="play">▶ 再生</button>
+      <button type="button" data-jump="-365">−1年</button>
+      <button type="button" data-jump="365">+1年</button>
+      <button type="button" data-jump="bloom">次の満開</button>
+      <button type="button" data-jump="autumn">次の紅葉</button>
+      <button type="button" data-jump="today">今日</button>
+      <span class="gap"></span>
+      <label class="lab" for="dateInput" style="display:none">日付を指定</label>
+      <input type="date" id="dateInput" aria-label="日付を指定">
+    </div>
+  </section>
+
+  <section class="notes">
+    <div>
+      <h2>枝の生成</h2>
+      <p>成長期ごとに樹冠の形の中へ「引き寄せ点」を撒き、近くの枝先がその方向へ伸びます。樹冠はロジスティック曲線で大きくなり、最終的に高さ約12m、横に広がる傘型になります。</p>
+    </div>
+    <div>
+      <h2>時間の扱い</h2>
+      <p>40年分の成長を読み込み時に1回だけ計算し、各節点に生まれた時刻を記録します。表示時は指定日までに生まれた節点だけを描きます。枝が伸びるのは毎年4月中旬から8月中旬です。</p>
+    </div>
+    <div>
+      <h2>太さと季節</h2>
+      <p>幹の太さは枝先の数から求めるパイプモデルで計算します。季節は横浜のソメイヨシノを目安に、3月下旬に開花、4月中旬から葉桜、10〜11月に紅葉と落葉します。</p>
+    </div>
+    <div>
+      <h2>同じ木が育ち続ける</h2>
+      <p>乱数のシードと植樹日はコード先頭の <code>CONFIG</code> に固定しています。誰がいつ開いても同じ木が表示され、サーバーは必要ありません。</p>
+    </div>
+  </section>
+</main>
+
+<script>
+/* =========================================================
+   設定:植樹日・乱数シード・シミュレーション年数
+   ========================================================= */
+const CONFIG = {
+  plantDate: [2026, 10, 20], // 植樹日(年, 月, 日)
+  seed: 20261020,            // 乱数シード。変えると別の木になる
+  years: 40,                 // 植樹後に計算する年数
+  nursery: 2,                // 植樹前の苗木の育成年数(植えた時点で枝ぶりがあるように)
+};
+
+/* Space Colonization のパラメータ(単位はメートル) */
+const P = {
+  D: 0.12,        // 1ステップで伸びる枝の長さ
+  DI: 1.3,        // 引き寄せ点が枝先に影響する距離
+  DK: 0.2,        // 枝がこの距離まで近づくと引き寄せ点が消える
+  step: 1 / 24,   // 1ステップ = 約半月
+  HMAX: 12,       // 樹冠の最終的な高さ
+  tipR: 0.009,    // 枝先の半径
+  pipeE: 2.2,     // パイプモデルの指数(2 = ダ・ヴィンチの法則)
+  growFrom: 100,  // 枝が伸びる期間(年間通算日) 4月10日頃
+  growTo: 228,    //                              8月16日頃
+};
+
+const DAY_MS = 86400000;
+const PLANT = new Date(CONFIG.plantDate[0], CONFIG.plantDate[1] - 1, CONFIG.plantDate[2]);
+const MAX_DAY = Math.round(CONFIG.years * 365.2425);
+
+function dateAt(days) {
+  return new Date(PLANT.getFullYear(), PLANT.getMonth(), PLANT.getDate() + Math.floor(days));
+}
+function dayIndexOf(date) {
+  return Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate()) - PLANT) / DAY_MS);
+}
+function doyOf(date) {
+  return Math.round((date - new Date(date.getFullYear(), 0, 1)) / DAY_MS) + 1;
+}
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/* 節点ごとに決まった乱数(葉や花の位置・色に使う) */
+function hash(i, k) {
+  let h = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(k + 0x27d4eb2f, 0xc2b2ae35);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d);
+  h ^= h >>> 12; h = Math.imul(h, 0x297a2d39);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/* 樹冠の大きさ(植樹からの年数 tau → 高さ m) */
+const crownH = (tau) => P.HMAX / (1 + Math.exp(-(tau - 7) / 3.8));
+const tauForH = (h) => (h >= P.HMAX * 0.999 ? Infinity : 7 - 3.8 * Math.log(P.HMAX / h - 1));
+
+/* 高さ1に正規化した樹冠の形:下が切れた横長の超楕円(傘型) */
+function inUnitCrown(x, y) {
+  if (y < 0.3 || y > 1) return false;
+  const dx = x / 0.74, dy = (y - 0.64) / 0.36;
+  return Math.pow(Math.abs(dx), 2.4) + Math.pow(Math.abs(dy), 2.2) <= 1;
+}
+
+/* =========================================================
+   成長シミュレーション(読み込み時に1回だけ実行)
+   ========================================================= */
+function simulate() {
+  const rnd = mulberry32(CONFIG.seed);
+  const X = [], Y = [], PAR = [], BIRTH = [];
+  const cell = 0.5, grid = new Map();
+  const gk = (cx, cy) => (cx + 20000) * 40000 + (cy + 20000);
+
+  function add(x, y, parent, birth) {
+    const i = X.length;
+    X.push(x); Y.push(y); PAR.push(parent); BIRTH.push(birth);
+    const k = gk(Math.floor(x / cell), Math.floor(y / cell));
+    let a = grid.get(k); if (!a) { a = []; grid.set(k, a); }
+    a.push(i);
+    return i;
+  }
+  function nearest(x, y, r) {
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell), R = Math.ceil(r / cell);
+    let best = -1, bd = r * r;
+    for (let i = cx - R; i <= cx + R; i++) for (let j = cy - R; j <= cy + R; j++) {
+      const a = grid.get(gk(i, j)); if (!a) continue;
+      for (const n of a) {
+        const dx = X[n] - x, dy = Y[n] - y, d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; best = n; }
+      }
+    }
+    return best;
+  }
+
+  // 接ぎ木直後の細い幹
+  let prev = add(0, 0, -1, -1e9);
+  for (let y = P.D; y <= 0.45; y += P.D) prev = add((rnd() - 0.5) * 0.01, y, prev, -1e9);
+
+  let AX = [], AY = [], AA = [];
+  const steps = Math.ceil((CONFIG.years + CONFIG.nursery) / P.step);
+  for (let s = 0; s < steps; s++) {
+    const tau = -CONFIG.nursery + s * P.step;
+    const doy = doyOf(dateAt(tau * 365.2425));
+    if (doy < P.growFrom || doy > P.growTo) continue;   // 成長期以外は休眠
+
+    const h = crownH(tau);
+    const maturity = Math.min(1, h / P.HMAX);
+
+    // 1. 現在の樹冠の中に引き寄せ点を撒く(既に枝がある場所には撒かない)
+    const n = Math.round(1.6 * h * h) + 6;
+    for (let k = 0; k < n; k++) {
+      let ux, uy, tries = 0;
+      do { ux = (rnd() * 2 - 1) * 0.74; uy = 0.3 + rnd() * 0.7; tries++; }
+      while (!inUnitCrown(ux, uy) && tries < 20);
+      if (tries >= 20) continue;
+      const x = ux * h + 0.04 * h * uy, y = uy * h;   // わずかに右へ傾ける
+      if (nearest(x, y, P.DK) >= 0) continue;
+      AX.push(x); AY.push(y); AA.push(0);
+    }
+
+    // 2. 各引き寄せ点を最寄りの枝先に割り当て、方向を合計
+    const acc = new Map();
+    for (let a = 0; a < AX.length; a++) {
+      const nd = nearest(AX[a], AY[a], P.DI);
+      if (nd < 0) continue;
+      let dx = AX[a] - X[nd], dy = AY[a] - Y[nd];
+      const l = Math.hypot(dx, dy) || 1;
+      let v = acc.get(nd); if (!v) { v = [0, 0]; acc.set(nd, v); }
+      v[0] += dx / l; v[1] += dy / l;
+    }
+
+    // 3. 枝を伸ばす(若木は上へ、成木は横へ広がる傾向を加える)
+    for (const [nd, v] of acc) {
+      let dx = v[0], dy = v[1], l = Math.hypot(dx, dy);
+      if (l < 1e-3) continue;
+      dx /= l; dy /= l;
+      dy += 0.3 * (1 - maturity) + 0.05;
+      dx += Math.sign(X[nd]) * 0.06 * maturity;
+      dx += (rnd() - 0.5) * 0.25; dy += (rnd() - 0.5) * 0.25;
+      l = Math.hypot(dx, dy); dx /= l; dy /= l;
+      const nx = X[nd] + dx * P.D, ny = Y[nd] + dy * P.D;
+      if (ny < 0.05) continue;
+      add(nx, ny, nd, tau + rnd() * P.step * 0.9);
+    }
+
+    // 4. 枝が届いた引き寄せ点と、長く届かない点を消す
+    const KX = [], KY = [], KA = [];
+    for (let a = 0; a < AX.length; a++) {
+      if (AA[a] > 60 || nearest(AX[a], AY[a], P.DK) >= 0) continue;
+      KX.push(AX[a]); KY.push(AY[a]); KA.push(AA[a] + 1);
+    }
+    AX = KX; AY = KY; AA = KA;
+  }
+
+  // 後処理:最終的な枝先数と、下枝が枯れ落ちる時刻
+  const N = X.length;
+  const kids = Array.from({ length: N }, () => []);
+  for (let i = 1; i < N; i++) kids[PAR[i]].push(i);
+  const tips = new Float64Array(N);
+  for (let i = N - 1; i >= 1; i--) { if (tips[i] === 0) tips[i] = 1; tips[PAR[i]] += tips[i]; }
+  const DEATH = new Float64Array(N).fill(Infinity);
+  for (let i = 1; i < N; i++) {
+    const p = PAR[i];
+    let d = DEATH[p];
+    if (kids[p].length > 1) {
+      let main = kids[p][0];
+      for (const c of kids[p]) if (tips[c] > tips[main]) main = c;
+      if (i !== main && tips[i] < 0.12 * tips[main]) {
+        // 樹冠の下端(高さの24%)より低い位置から出た細い側枝は、やがて枯れて落ちる
+        const die = tauForH((Y[i] + 0.25) / 0.24);
+        d = Math.min(d, Math.max(die, BIRTH[i] + 1.5));
+      }
+    }
+    DEATH[i] = d;
+  }
+  return {
+    N, X: Float64Array.from(X), Y: Float64Array.from(Y),
+    PAR: Int32Array.from(PAR), BIRTH: Float64Array.from(BIRTH), DEATH,
+  };
+}
+
+/* =========================================================
+   季節(年間通算日 → 各要素の量 0〜1)
+   ========================================================= */
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function seasonAt(d) {
+  const s = {
+    budPink:   smooth(70, 80, d) * (1 - smooth(84, 90, d)),   // つぼみが膨らむ
+    bloom:     smooth(80, 89, d) * (1 - smooth(96, 106, d)),  // 開花〜満開
+    petalFall: smooth(93, 98, d) * (1 - smooth(104, 110, d)), // 花吹雪
+    groundPetal: smooth(94, 100, d) * (1 - smooth(108, 122, d)),
+    leaf:      smooth(96, 128, d) * (1 - smooth(300, 336, d)),
+    leafSize:  smooth(96, 138, d),
+    young:     1 - smooth(120, 165, d),
+    autumn:    smooth(258, 305, d),
+    groundLeaf: smooth(292, 318, d) * (1 - smooth(352, 366, d)) + (1 - smooth(5, 30, d)) * 0.4,
+  };
+  let label;
+  if (s.petalFall > 0.35) label = '花吹雪';
+  else if (s.bloom > 0.65) label = '満開';
+  else if (s.bloom > 0.05 && d < 92) label = '開花';
+  else if (s.budPink > 0.2) label = 'つぼみ';
+  else if (d >= 100 && d < 128) label = '葉桜';
+  else if (d >= 128 && d < 170) label = '新緑';
+  else if (d >= 170 && d < 258) label = '盛夏';
+  else if (d >= 258 && d < 300) label = '紅葉';
+  else if (d >= 300 && d < 338) label = '落葉';
+  else label = '冬芽・休眠';
+  s.label = label;
+  return s;
+}
+
+/* =========================================================
+   描画
+   ========================================================= */
+function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+function mix(a, b, t) { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`; }
+function mixRgb(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
+const rgb = (a, al = 1) => `rgba(${a.map(Math.round).join(',')},${al})`;
+
+// 季節ごとの空と地面(通算日をキーに補間)
+const SKY = [
+  [15,  '#dfe5ec', '#f2f4f6', '#b8b29a'],
+  [95,  '#cddff0', '#f5eef1', '#a9bf80'],
+  [200, '#a8cbea', '#e7f1f7', '#7fa35b'],
+  [290, '#d6dce4', '#f3ebe1', '#b2a173'],
+  [380, '#dfe5ec', '#f2f4f6', '#b8b29a'],
+];
+function skyAt(d) {
+  if (d < SKY[0][0]) d += 365;
+  for (let i = 0; i < SKY.length - 1; i++) {
+    const [d0, a0, b0, g0] = SKY[i], [d1, a1, b1, g1] = SKY[i + 1];
+    if (d >= d0 && d <= d1) {
+      const t = (d - d0) / (d1 - d0);
+      return [mixRgb(hex(a0), hex(a1), t), mixRgb(hex(b0), hex(b1), t), mixRgb(hex(g0), hex(g1), t)];
+    }
+  }
+  return [hex(SKY[0][1]), hex(SKY[0][2]), hex(SKY[0][3])];
+}
+
+const AUTUMN = ['#e3b53e', '#d9822f', '#c0502f', '#9e3038'];
+
+function makeRenderer(tree, canvas) {
+  const { N, X, Y, PAR, BIRTH, DEATH } = tree;
+  const ctx = canvas.getContext('2d');
+  const accR = new Float64Array(N), rad = new Float64Array(N);
+  const alive = new Uint8Array(N), hasKid = new Uint8Array(N);
+  const E = P.pipeE, tipE = Math.pow(P.tipR, E);
+  let W = 0, H = 0;
+
+  function resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const r = canvas.getBoundingClientRect();
+    W = r.width; H = r.height;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function draw(day) {
+    const t = day / 365.2425;           // 植樹からの年数
+    const date = dateAt(day);
+    const d = doyOf(date);
+    const S = seasonAt(d);
+    const m = Math.min(1, Math.max(0, (t + CONFIG.nursery - 1) / 6)); // 花付きの成熟度
+
+    // 生きている節点と、パイプモデルによる太さ
+    accR.fill(0); hasKid.fill(0);
+    let count = 1, top = 0.45;
+    alive[0] = 1;
+    for (let i = N - 1; i >= 1; i--) {
+      if (BIRTH[i] > t || DEATH[i] <= t) { alive[i] = 0; continue; }
+      alive[i] = 1; count++;
+      if (accR[i] === 0) accR[i] = tipE;
+      accR[PAR[i]] += accR[i];
+      hasKid[PAR[i]] = 1;
+      if (Y[i] > top) top = Y[i];
+    }
+    for (let i = 0; i < N; i++) if (alive[i]) rad[i] = Math.pow(accR[i] || tipE, 1 / E);
+
+    // カメラ:樹冠の大きさに合わせてなめらかにズーム
+    const ch = crownH(t);
+    const viewM = Math.max(2.6, ch * 1.3, ch * 1.6 * (H / W) * 1.12);
+    const s = (H * 0.84) / viewM;
+    const gy = H * 0.9, ox = W / 2 - 0.02 * ch * s;
+    const sx = (x) => ox + x * s, sy = (y) => gy - y * s;
+
+    // 空と地面
+    const [skyTop, skyBot, grass] = skyAt(d);
+    const g = ctx.createLinearGradient(0, 0, 0, gy);
+    g.addColorStop(0, rgb(skyTop)); g.addColorStop(1, rgb(skyBot));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, gy + 1);
+    ctx.fillStyle = rgb(grass); ctx.fillRect(0, gy, W, H - gy);
+    ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(0, gy, W, 1);
+
+    // 木陰
+    const shadeW = Math.max(0.5, ch * 0.75) * s;
+    ctx.fillStyle = 'rgba(40,40,30,0.12)';
+    ctx.beginPath(); ctx.ellipse(ox, gy + 6, shadeW, Math.min(14, shadeW * 0.12), 0, 0, Math.PI * 2); ctx.fill();
+
+    // 地面に散った花びら・落ち葉
+    const groundRnd = mulberry32(CONFIG.seed + 7);
+    const gp = S.groundPetal * m, gl = S.groundLeaf * Math.min(1, ch / 4);
+    for (let k = 0; k < 420; k++) {
+      const u = groundRnd(), v = groundRnd(), w = groundRnd();
+      const x = ox + (u - 0.5) * 2 * shadeW * 1.25 * Math.sqrt(v);
+      const y = gy + 2 + w * (H - gy - 4);
+      if (u < gp * 0.9 + 0.05 * gp) { ctx.fillStyle = 'rgba(247,214,222,0.9)'; ctx.fillRect(x, y, 2.2, 1.6); }
+      else if (w < gl) { ctx.fillStyle = AUTUMN[k % 4]; ctx.globalAlpha = 0.75; ctx.fillRect(x, y, 2.6, 1.8); ctx.globalAlpha = 1; }
+    }
+
+    // 目盛り(メートル)
+    const tick = viewM > 8 ? 2 : 1;
+    ctx.strokeStyle = 'rgba(30,40,40,0.35)'; ctx.fillStyle = 'rgba(30,40,40,0.6)';
+    ctx.lineWidth = 1; ctx.font = '11px "IBM Plex Mono", monospace'; ctx.textBaseline = 'middle';
+    const rx = 18;
+    ctx.beginPath(); ctx.moveTo(rx, gy); ctx.lineTo(rx, sy(Math.floor(viewM * 0.98 / tick) * tick)); ctx.stroke();
+    for (let mm = tick; mm < viewM * 0.98; mm += tick) {
+      const yy = sy(mm);
+      ctx.beginPath(); ctx.moveTo(rx, yy); ctx.lineTo(rx + 6, yy); ctx.stroke();
+      ctx.fillText(mm + ' m', rx + 9, yy);
+    }
+
+    // 枝
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#4b3d3f';
+    for (let i = 1; i < N; i++) {
+      if (!alive[i]) continue;
+      const p = PAR[i];
+      const gr = Math.min(1, Math.max(0, (t - BIRTH[i]) / 0.05));
+      const x0 = X[p], y0 = Y[p];
+      const x1 = x0 + (X[i] - x0) * gr, y1 = y0 + (Y[i] - y0) * gr;
+      ctx.lineWidth = Math.max(0.6, 2 * rad[i] * s * (p === 0 ? 1.15 : 1));
+      ctx.beginPath(); ctx.moveTo(sx(x0), sy(y0)); ctx.lineTo(sx(x1), sy(y1)); ctx.stroke();
+    }
+
+    // 細い枝先:冬芽・つぼみ・花・葉
+    const fine = P.tipR * 2.6;
+    const px = (mtr, min) => Math.max(min, mtr * s);
+    for (let i = 1; i < N; i++) {
+      if (!alive[i] || rad[i] > fine) continue;
+      const fx = sx(X[i] + (hash(i, 1) - 0.5) * 0.28), fy = sy(Y[i] + (hash(i, 2) - 0.5) * 0.22);
+
+      // 葉
+      if (S.leaf > 0.01 && hash(i, 3) < S.leaf) {
+        let col;
+        if (hash(i, 5) < S.autumn) col = AUTUMN[Math.floor(hash(i, 6) * 4)];
+        else col = mix(S.young > 0.01 ? '#b7d27a' : '#5d8c45', hash(i, 7) < 0.5 ? '#557f3f' : '#6a9a4c', 1 - S.young);
+        ctx.fillStyle = col; ctx.globalAlpha = 0.88;
+        const lr = px((0.06 + 0.05 * hash(i, 4)) * (0.35 + 0.65 * S.leafSize), 0.9);
+        ctx.beginPath(); ctx.arc(fx, fy, lr, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(fx + (hash(i, 30) - 0.5) * lr * 3, fy + (hash(i, 31) - 0.5) * lr * 2.4, lr * 0.85, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      // つぼみ
+      if (S.budPink > 0.05 && hash(i, 8) < S.budPink * m * 1.2) {
+        ctx.fillStyle = '#d97d97';
+        ctx.beginPath(); ctx.arc(fx, fy, px(0.03, 1), 0, Math.PI * 2); ctx.fill();
+      }
+      // 花
+      if (S.bloom > 0.01 && hash(i, 9) < S.bloom * m) {
+        for (let k = 0; k < 5; k++) {
+          const ax = fx + (hash(i, 10 + k) - 0.5) * px(0.22, 3.5);
+          const ay = fy + (hash(i, 20 + k) - 0.5) * px(0.16, 3);
+          ctx.fillStyle = k === 0 ? '#f1c2cf' : '#fbe8ed';
+          ctx.beginPath(); ctx.arc(ax, ay, px(0.045, 1.3), 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      // 冬芽(葉も花もない時期の枝先)
+      if (!hasKid[i] && S.leaf < 0.05 && S.bloom < 0.05 && S.budPink < 0.1) {
+        ctx.fillStyle = '#7a3f3f';
+        ctx.beginPath(); ctx.arc(sx(X[i]), sy(Y[i]), 1.1, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // 舞う花びら
+    if (S.petalFall > 0.01 && m > 0) {
+      const pr = mulberry32(CONFIG.seed + Math.floor(day * 3));
+      const cnt = Math.round(300 * S.petalFall * m * Math.min(1.4, Math.max(0.25, ch / 7)));
+      ctx.fillStyle = 'rgba(248,220,228,0.95)';
+      for (let k = 0; k < cnt; k++) {
+        const x = (pr() - 0.5) * 2 * ch * 0.95, y = pr() * top * 1.05;
+        ctx.save(); ctx.translate(sx(x), sy(y)); ctx.rotate(pr() * Math.PI);
+        ctx.beginPath(); ctx.ellipse(0, 0, 2.6, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    return { date, label: S.label, height: top, count };
+  }
+
+  return { resize, draw };
+}
+
+/* =========================================================
+   画面の操作
+   ========================================================= */
+if (typeof document !== 'undefined') {
+  const $ = (id) => document.getElementById(id);
+  const slider = $('day'), dateInput = $('dateInput'), playBtn = $('play');
+  slider.max = MAX_DAY;
+  const fmtISO = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  dateInput.min = fmtISO(PLANT); dateInput.max = fmtISO(dateAt(MAX_DAY));
+
+  const ticks = $('ticks');
+  for (let y = 0; y <= CONFIG.years; y += 10) {
+    const sp = document.createElement('span');
+    sp.style.left = (y / CONFIG.years * 100) + '%';
+    sp.textContent = y === 0 ? '植樹' : `${y}年`;
+    ticks.appendChild(sp);
+  }
+
+  let renderer = null, day = 0, playing = false, last = 0;
+  const clampDay = (v) => Math.max(0, Math.min(MAX_DAY, v));
+
+  function update() {
+    if (!renderer) return;
+    const info = renderer.draw(day);
+    const dt = info.date;
+    $('date').textContent = `${dt.getFullYear()}年${dt.getMonth() + 1}月${dt.getDate()}日`;
+    const whole = Math.floor(day);
+    const yrs = Math.floor(whole / 365.2425), mos = Math.floor((whole - yrs * 365.2425) / 30.44);
+    $('elapsed').textContent = whole < 31 ? `${whole}日` : `${yrs}年${mos}か月`;
+    $('height').textContent = `${info.height.toFixed(1)} m`;
+    $('nodes').textContent = info.count.toLocaleString('ja-JP');
+    $('season').textContent = info.label;
+    slider.value = whole;
+    dateInput.value = fmtISO(dt);
+  }
+
+  function nextDoy(target) {
+    // 現在の日付より後で、通算日が target になる日
+    const cur = dateAt(day);
+    let y = cur.getFullYear();
+    let cand = new Date(y, 0, target);
+    if (dayIndexOf(cand) <= Math.floor(day)) cand = new Date(y + 1, 0, target);
+    return dayIndexOf(cand);
+  }
+
+  slider.addEventListener('input', () => { day = +slider.value; update(); });
+  dateInput.addEventListener('change', () => {
+    if (!dateInput.value) return;
+    const [y, m, d] = dateInput.value.split('-').map(Number);
+    day = clampDay(dayIndexOf(new Date(y, m - 1, d))); update();
+  });
+  document.querySelectorAll('[data-jump]').forEach((b) => b.addEventListener('click', () => {
+    const j = b.dataset.jump;
+    if (j === 'today') day = clampDay(dayIndexOf(new Date()));
+    else if (j === 'bloom') day = clampDay(nextDoy(91));
+    else if (j === 'autumn') day = clampDay(nextDoy(300));
+    else day = clampDay(Math.floor(day) + Number(j));
+    update();
+  }));
+
+  function frame(ts) {
+    if (!playing) return;
+    const dtSec = last ? Math.min(0.1, (ts - last) / 1000) : 0;
+    last = ts;
+    day += dtSec * 365 / 8;        // 1年を8秒で再生
+    if (day >= MAX_DAY) { day = MAX_DAY; setPlaying(false); }
+    update();
+    if (playing) requestAnimationFrame(frame);
+  }
+  function setPlaying(on) {
+    playing = on; last = 0;
+    playBtn.textContent = on ? '❚❚ 一時停止' : '▶ 再生';
+    if (on) { if (day >= MAX_DAY) day = 0; requestAnimationFrame(frame); }
+  }
+  playBtn.addEventListener('click', () => setPlaying(!playing));
+
+  // ?date=2036-04-01 のように日付を指定して開ける(自分のサイトで公開したとき用)
+  const q = new URLSearchParams(location.search).get('date');
+  if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) {
+    const [y, m, d] = q.split('-').map(Number);
+    day = clampDay(dayIndexOf(new Date(y, m - 1, d)));
+  } else {
+    day = clampDay(dayIndexOf(new Date()));
+  }
+
+  setTimeout(() => {
+    const tree = simulate();
+    renderer = makeRenderer(tree, $('cv'));
+    renderer.resize();
+    $('loading').hidden = true;
+    update();
+    new ResizeObserver(() => { renderer.resize(); update(); }).observe($('stage'));
+  }, 30);
+}
+</script>
