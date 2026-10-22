@@ -22,8 +22,8 @@
 - Claude Opus5.5
 
 ## 作成者
-- daisuke1500m
-- https://github.com/daisuke1500m
+- karakui-whale
+- https://github.com/karakui-whale
 
 ## ライセンス
 - GNU General Public License v3.0 or later

@@ -117,7 +117,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
     <canvas id="cv"></canvas>
     <div class="season" id="season">—</div>
     <div class="loading" id="loading">樹形を計算しています…</div>
-    <a class="info" href="https://github.com/daisuke1500m/daisuke1500m.github.io/blob/main/README.md" target="_blank" rel="noopener" aria-label="このサイトについて" title="このサイトについて">i</a>
+    <a class="info" href="https://github.com/karakui-whale/karakui-whale.github.io/blob/main/README.md" target="_blank" rel="noopener" aria-label="このサイトについて" title="このサイトについて">i</a>
   </section>
 
   <section class="panel" aria-label="日付の操作">
@@ -175,8 +175,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
    設定:植樹日・乱数シード・シミュレーション年数
    ========================================================= */
 const CONFIG = {
-  plantDate: [2026, 10, 20], // 植樹日(年, 月, 日)
-  seed: 20261020,            // 乱数シード。変えると別の木になる
+  plantDate: [2026, 10, 23], // 植樹日(年, 月, 日)
+  seed: 20261023,            // 乱数シード。変えると別の木になる
   years: 40,                 // 植樹後に計算する年数
   nursery: 2,                // 植樹前の苗木の育成年数(植えた時点で枝ぶりがあるように)
 };
@@ -516,7 +516,7 @@ const AUTUMN = ['#e3b53e', '#d9822f', '#c0502f', '#9e3038'];
 const PETAL = {
   wind: 0.7,      // 右へ流す風の強さ。大きいほど斜めに流れる
   fall: 0.6,      // 落ちる速さ
-  maxRate: 220,   // 1秒あたりに舞い出る枚数の上限
+  maxRate: 10,   // 1秒あたりに舞い出る枚数の上限
   max: 700,       // 画面に同時に出す枚数の上限
   colors: ['rgba(246,200,214,0.97)', 'rgba(240,184,201,0.97)', 'rgba(251,226,233,0.97)'],
 };
