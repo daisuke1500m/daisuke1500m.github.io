@@ -45,6 +45,18 @@ h1 { margin: 4px 0 6px; font-family: var(--font-display); font-weight: 700; font
 
 .stage { position: relative; border-radius: 6px; overflow: hidden; height: min(68vh, 560px); min-height: 340px; background: #dfe6ee; border: 1px solid var(--line); }
 .stage canvas { display: block; width: 100%; height: 100%; }
+/* 右下の情報リンク(半透明の小さな丸ボタン) */
+.info {
+  position: absolute; z-index: 2;
+  right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(255,255,255,.45); border: 1px solid rgba(40,45,50,.25);
+  color: rgba(35,40,45,.8); font: italic 600 12px/1 Georgia, "Times New Roman", serif;
+  text-decoration: none; transition: background .2s;
+}
+.info:hover { background: rgba(255,255,255,.8); }
+.info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* 公開モード(?debug なし):操作UIと説明を隠し、木の画面だけをブラウザ全体に表示する */
 :root.public, :root.public body { height: 100%; overflow: hidden; }
@@ -105,6 +117,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
     <canvas id="cv"></canvas>
     <div class="season" id="season">—</div>
     <div class="loading" id="loading">樹形を計算しています…</div>
+    <a class="info" href="https://github.com/daisuke1500m/daisuke1500m.github.io/blob/main/README.md" target="_blank" rel="noopener" aria-label="このサイトについて" title="このサイトについて">i</a>
   </section>
 
   <section class="panel" aria-label="日付の操作">
