@@ -1,4 +1,4 @@
-
+![example branch parameter](https://github.com/github/docs/actions/workflows/main.yml/badge.svg?branch=feature-1)
 
 ## 蔵人桜
 木の成長をリアルタイムで観察できるWEBサイトです。実時間で木が成長していくので、数年立つと木が大きく成長し、満開の桜を楽しむことができるでしょう。このサイトはClaudeを使って制作したため、蔵人桜（くろうどざくら）と命名しました。
