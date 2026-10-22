@@ -8,9 +8,9 @@
 - ここにURLを追加
 
 ## 設計
-- このサイトは静的サイトです。サーバ側で日数の計算を行わないため、github pagesなどのサービスでホストできランニングコストを抑えられます。
+- このサイトは静的サイトです。そのためgithub pagesなどのサービスでホストできランニングコストを抑えられます。
 - 木の生成はクライアント側で行われます。
-- 誰が見ても同じ木が描写されるようになっています。
+- 誰がアクセスしても成長後の樹形は同じです。
 - 描画される時刻にはアクセス時間が使用されます。
 - 木の成長の再現にはSpace Colonizationアルゴリズムを使用しています。
 
@@ -27,4 +27,4 @@
 
 ## ライセンス
 - GNU General Public License v3.0 or later
-- 全文は[COPYING](https://github.com/daisuke1500m/daisuke1500m.github.io/blob/main/COPYING)を参照下さい。
+- 全文は[COPYING](https://github.com/daisuke1500m/daisuke1500m.github.io/blob/main/COPYING)を参照して下さい。
