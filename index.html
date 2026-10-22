@@ -541,9 +541,18 @@ function makeRenderer(tree, canvas) {
         if (hash(i, 5) < S.autumn) col = AUTUMN[Math.floor(hash(i, 6) * 4)];
         else col = mix(S.young > 0.01 ? '#b7d27a' : '#5d8c45', hash(i, 7) < 0.5 ? '#557f3f' : '#6a9a4c', 1 - S.young);
         ctx.fillStyle = col; ctx.globalAlpha = 0.88;
+        // 葉は細長い楕円(長さ:幅 ≒ 2:1)。枝先から外側・やや下向きに垂れる向きにする
         const lr = px((0.06 + 0.05 * hash(i, 4)) * (0.35 + 0.65 * S.leafSize), 0.9);
-        ctx.beginPath(); ctx.arc(fx, fy, lr, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(fx + (hash(i, 30) - 0.5) * lr * 3, fy + (hash(i, 31) - 0.5) * lr * 2.4, lr * 0.85, 0, Math.PI * 2); ctx.fill();
+        const out = X[i] >= 0 ? 0 : Math.PI;
+        for (let k = 0; k < 2; k++) {
+          const ang = out + (X[i] >= 0 ? 1 : -1) * (0.15 + 0.9 * hash(i, 40 + k)) - 0.6 + 1.2 * hash(i, 50 + k);
+          const lx = fx + (k ? (hash(i, 30) - 0.5) * lr * 3 : 0);
+          const ly = fy + (k ? (hash(i, 31) - 0.5) * lr * 2.4 : 0);
+          const L = lr * (k ? 1.35 : 1.5), Wd = L * 0.5;
+          ctx.beginPath();
+          ctx.ellipse(lx + Math.cos(ang) * L * 0.6, ly + Math.sin(ang) * L * 0.6, L, Wd, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.globalAlpha = 1;
       }
       // つぼみ
