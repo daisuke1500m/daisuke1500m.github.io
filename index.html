@@ -158,7 +158,7 @@ const P = {
   step: 1 / 24,   // 1ステップ = 約半月
   HMAX: 12,       // 樹冠の最終的な高さ
   trunk: 0.9,     // 苗木の幹の高さ(ここから上で枝分かれする)
-  leafAspect: 0.9, // 葉の幅 ÷ 葉の長さ。値を小さくすると葉が細く、大きくすると葉が幅広になります。
+  leafAspect: 0.5, // 葉の幅 ÷ 葉の長さ。値を小さくすると葉が細く、大きくすると葉が幅広になります。
   tipR: 0.009,    // 枝先の半径
   pipeE: 2.2,     // パイプモデルの指数(2 = ダ・ヴィンチの法則)
   growFrom: 100,  // 枝が伸びる期間(年間通算日) 4月10日頃
@@ -434,6 +434,165 @@ function skyAt(d) {
 
 const AUTUMN = ['#e3b53e', '#d9822f', '#c0502f', '#9e3038'];
 
+/* =========================================================
+   積雪(冬の特に寒い時期だけ、年ごとにランダムに降る)
+   ========================================================= */
+const SNOW = {
+  maxEvents: 3,     // 1シーズンに降る回数の上限(0回の冬もある)
+  from: 25,         // 降り始めうる時期:12月1日から数えた日数(12月26日頃)
+  span: 55,         //   〜その55日後(2月中旬)まで。1月下旬に最も降りやすい
+  meltMin: 2,       // 融けきるまでの日数(最短)
+  meltMax: 7,       //                    (最長)
+};
+function snowAt(date) {
+  const y = date.getFullYear();
+  const wy = date.getMonth() >= 6 ? y : y - 1;          // 何年の冬か
+  const off = (date - new Date(wy, 11, 1)) / DAY_MS;    // 12月1日からの日数
+  const none = { amt: 0, falling: false };
+  if (off < 0 || off > SNOW.from + SNOW.span + SNOW.meltMax + 2) return none;
+  const r = mulberry32((CONFIG.seed ^ Math.imul(wy, 7919)) >>> 0);
+  const n = Math.floor(r() * (SNOW.maxEvents + 1));
+  let amt = 0, falling = false;
+  for (let k = 0; k < n; k++) {
+    const start = SNOW.from + SNOW.span * (r() + r()) / 2;
+    const depth = 0.45 + 0.55 * r();
+    const melt = SNOW.meltMin + r() * (SNOW.meltMax - SNOW.meltMin);
+    const dt = off - start;
+    if (dt < 0 || dt > melt + 1) continue;
+    if (dt < 1) falling = true;                          // 降った当日
+    amt = Math.max(amt, depth * (dt < 1 ? 0.5 + dt * 0.5 : 1 - (dt - 1) / melt));
+  }
+  return { amt: Math.max(0, amt), falling };
+}
+
+/* =========================================================
+   周りの物(位置はメートル。幹の根元が x = 0)
+   ========================================================= */
+const SCENE = {
+  fenceTo: 7.5,     // 板塀の右端(ここより右は道)
+  fenceH: 1.6,      // 板塀の高さ
+  pole: 12.2,       // 電柱の位置
+  jizo: 10.4,       // お地蔵さんの位置
+  bench: -3.6,      // ベンチの中心(左に張り出した枝の下)
+  bikeSpots: [[-6.4, 1], [5.7, -1]], // 自転車を置く場所と向き(ベンチの横 / 塀の端)
+  bikeChance: 0.5,  // 自転車が置いてある確率(日ごとに決まる)
+};
+const WHITE = 'rgba(248,250,252,0.96)';
+
+/* 奥:板塀・電柱・電線 */
+function drawBack(ctx, sx, base, s, W, snow) {
+  const Y = (m) => base - m * s;
+  // 焼杉の板塀
+  const x0 = -4, x1 = sx(SCENE.fenceTo), top = Y(SCENE.fenceH);
+  if (x1 > 0) {
+    ctx.fillStyle = '#5d524b'; ctx.fillRect(x0, top, x1 - x0, base - top);
+    ctx.strokeStyle = 'rgba(255,240,225,0.07)'; ctx.lineWidth = 1;
+    const bw = Math.max(3, 0.18 * s);
+    for (let x = x1 - bw; x > x0; x -= bw) { ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, base); ctx.stroke(); }
+    ctx.fillStyle = '#463c36';
+    for (const h of [0.35, 1.2]) ctx.fillRect(x0, Y(h) - Math.max(1.5, 0.05 * s) / 2, x1 - x0, Math.max(1.5, 0.05 * s));
+    const cap = Math.max(2, 0.09 * s);
+    ctx.fillRect(x0, top - cap, x1 - x0 + 0.08 * s, cap);                       // 笠木
+    ctx.fillRect(x1 - 0.05 * s, Y(SCENE.fenceH + 0.15), Math.max(3, 0.13 * s), base - Y(SCENE.fenceH + 0.15)); // 端の柱
+    if (snow > 0.02) { ctx.fillStyle = WHITE; ctx.fillRect(x0, top - cap - snow * 0.08 * s - 1, x1 - x0 + 0.08 * s, snow * 0.08 * s + 1.5); }
+  }
+  // 電柱(上へ少し細くなるコンクリート柱)
+  const px = sx(SCENE.pole), wb = 0.32 * s / 2, wt = 0.22 * s / 2, ht = Y(12);
+  ctx.fillStyle = '#a7a59e';
+  ctx.beginPath(); ctx.moveTo(px - wb, base); ctx.lineTo(px - wt, ht); ctx.lineTo(px + wt, ht); ctx.lineTo(px + wb, base); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.beginPath(); ctx.moveTo(px + wb * 0.2, base); ctx.lineTo(px + wt * 0.2, ht); ctx.lineTo(px + wt, ht); ctx.lineTo(px + wb, base); ctx.closePath(); ctx.fill();
+  // 足場ボルト、腕金、碍子、変圧器
+  ctx.fillStyle = '#6d6c66';
+  for (let h = 2.2; h < 11; h += 0.45) ctx.fillRect(px + (h * 20 % 2 < 1 ? wb * 0.6 : -wb * 0.6 - 0.15 * s), Y(h), 0.15 * s, Math.max(1, 0.03 * s));
+  const armY = Y(11.2), armW = 1.7 * s;
+  ctx.fillRect(px - armW / 2, armY, armW, Math.max(2, 0.08 * s));
+  ctx.fillStyle = '#e9e6dc';
+  const ins = [-0.75, -0.1, 0.65].map((o) => px + o * s);
+  for (const ix of ins) ctx.fillRect(ix - 0.05 * s, armY - 0.14 * s, Math.max(2, 0.1 * s), 0.14 * s);
+  ctx.fillStyle = '#8f938f';
+  ctx.fillRect(px - wt - 0.5 * s, Y(9.4), 0.46 * s, 0.85 * s);
+  ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(px - wt - 0.5 * s, Y(9.4), 0.46 * s, 0.1 * s);
+  // 電線:左右の画面外へ、少したるませて張る
+  ctx.strokeStyle = 'rgba(38,40,42,0.78)'; ctx.lineWidth = 1;
+  const wire = (xa, ya, xb, yb, sag) => {
+    ctx.beginPath(); ctx.moveTo(xa, ya);
+    ctx.quadraticCurveTo((xa + xb) / 2, (ya + yb) / 2 + sag * s, xb, yb); ctx.stroke();
+  };
+  ins.forEach((ix, k) => {
+    const y = armY - 0.14 * s;
+    wire(ix, y, -10, y + (0.2 + 0.25 * k) * s, 0.8 + 0.45 * k);
+    wire(ix, y, W + 10, y + (0.1 + 0.15 * k) * s, 0.4 + 0.25 * k);
+  });
+  ctx.lineWidth = Math.max(1.4, 0.05 * s); ctx.strokeStyle = 'rgba(30,30,30,0.85)';   // 通信ケーブル
+  wire(px - wt, Y(7.3), -10, Y(7.6), 0.9);
+  wire(px + wt, Y(7.3), W + 10, Y(7.4), 0.4);
+  if (snow > 0.02) { ctx.fillStyle = WHITE; ctx.fillRect(px - armW / 2, armY - snow * 0.06 * s - 1, armW, snow * 0.06 * s + 1); }
+}
+
+/* 手前:ベンチ・お地蔵さん・自転車 */
+function drawFront(ctx, sx, gy, groundH, s, snow, bike) {
+  // ベンチ(木の座面と石の脚)
+  {
+    const base = gy + groundH * 0.45, Y = (m) => base - m * s, cx = sx(SCENE.bench);
+    ctx.fillStyle = 'rgba(40,40,30,0.18)';
+    ctx.beginPath(); ctx.ellipse(cx, base, 1.05 * s, Math.max(2, 0.08 * s), 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8e8b83';
+    for (const o of [-0.62, 0.62]) ctx.fillRect(cx + (o - 0.09) * s, Y(0.38), 0.18 * s, 0.38 * s);
+    ctx.fillStyle = '#8a6646'; ctx.fillRect(cx - 0.9 * s, Y(0.45), 1.8 * s, Math.max(2, 0.08 * s));
+    ctx.fillStyle = '#a17b57'; ctx.fillRect(cx - 0.9 * s, Y(0.45), 1.8 * s, Math.max(1, 0.025 * s));
+    if (snow > 0.02) {
+      ctx.fillStyle = WHITE; const h = snow * 0.09 * s + 1;
+      ctx.beginPath(); ctx.ellipse(cx, Y(0.45), 0.9 * s, h, 0, Math.PI, 0); ctx.fill();
+    }
+  }
+  // お地蔵さん(台座・赤い前掛け)
+  {
+    const base = gy + groundH * 0.3, Y = (m) => base - m * s, cx = sx(SCENE.jizo);
+    ctx.fillStyle = '#8b8880'; ctx.fillRect(cx - 0.26 * s, Y(0.2), 0.52 * s, 0.2 * s);
+    ctx.fillStyle = '#9d9a91';
+    ctx.beginPath(); ctx.ellipse(cx, Y(0.38), 0.16 * s, 0.2 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, Y(0.66), 0.1 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c23b2e';
+    ctx.beginPath(); ctx.moveTo(cx - 0.11 * s, Y(0.54)); ctx.lineTo(cx + 0.11 * s, Y(0.54));
+    ctx.lineTo(cx + 0.15 * s, Y(0.36)); ctx.lineTo(cx - 0.15 * s, Y(0.36)); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#6b8e5a'; ctx.fillRect(cx + 0.18 * s, Y(0.3), 0.06 * s, 0.1 * s);  // 供えた花
+    ctx.fillStyle = '#e8c33b'; ctx.beginPath(); ctx.arc(cx + 0.21 * s, Y(0.32), Math.max(1, 0.04 * s), 0, Math.PI * 2); ctx.fill();
+    if (snow > 0.02) {
+      ctx.fillStyle = WHITE;
+      ctx.beginPath(); ctx.ellipse(cx, Y(0.72), 0.11 * s, snow * 0.06 * s + 1, 0, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx - 0.26 * s, Y(0.2) - snow * 0.05 * s - 1, 0.52 * s, snow * 0.05 * s + 1);
+    }
+  }
+  // 自転車(前かごの付いた買い物自転車)
+  if (bike) {
+    const [bx, dir] = bike;
+    const base = gy + groundH * 0.6, Y = (m) => base - m * s;
+    const X = (m) => sx(bx + m * dir);
+    const r = 0.33, rear = -0.52, front = 0.52;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#2f2f2f'; ctx.lineWidth = Math.max(1.4, 0.045 * s);
+    for (const w of [rear, front]) { ctx.beginPath(); ctx.arc(X(w), Y(r), r * s, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.strokeStyle = '#4d7894'; ctx.lineWidth = Math.max(1.2, 0.04 * s);
+    const crank = [X(-0.05), Y(0.3)], seat = [X(-0.22), Y(0.82)], head = [X(0.38), Y(0.85)];
+    ctx.beginPath();
+    ctx.moveTo(X(rear), Y(r)); ctx.lineTo(...crank); ctx.lineTo(...seat); ctx.lineTo(X(rear), Y(r));
+    ctx.moveTo(...crank); ctx.lineTo(X(0.36), Y(0.72)); ctx.lineTo(...head);       // 低いフレーム
+    ctx.moveTo(X(front), Y(r)); ctx.lineTo(...head); ctx.lineTo(X(0.3), Y(1.0)); ctx.lineTo(X(0.18), Y(1.02));
+    ctx.stroke();
+    ctx.fillStyle = '#2f2f2f'; ctx.fillRect(Math.min(X(-0.32), X(-0.12)), Y(0.88), 0.2 * s, Math.max(2, 0.05 * s)); // サドル
+    ctx.strokeStyle = '#8b8e90'; ctx.lineWidth = 1;                                    // 前かご
+    const kx = Math.min(X(0.42), X(0.72));
+    ctx.strokeRect(kx, Y(1.0), 0.3 * s, 0.24 * s);
+    if (snow > 0.02) {
+      ctx.fillStyle = WHITE;
+      ctx.fillRect(Math.min(X(-0.32), X(-0.12)), Y(0.88) - snow * 0.05 * s - 1, 0.2 * s, snow * 0.05 * s + 1);
+      ctx.fillRect(kx, Y(1.0) - snow * 0.05 * s - 1, 0.3 * s, snow * 0.05 * s + 1);
+    }
+  }
+}
+
+
 function makeRenderer(tree, canvas) {
   const { N, X, Y, PAR, BIRTH, DEATH, bounds } = tree;
   const ctx = canvas.getContext('2d');
@@ -456,6 +615,9 @@ function makeRenderer(tree, canvas) {
     const d = doyOf(date);
     const S = seasonAt(d);
     const m = Math.min(1, Math.max(0, (t + CONFIG.nursery - 1) / 6)); // 花付きの成熟度
+    const SN = snowAt(date), snow = SN.amt;
+    const bikeHere = hash(Math.floor(day), 901) < SCENE.bikeChance && snow < 0.4;
+    const bike = bikeHere ? SCENE.bikeSpots[hash(Math.floor(day), 902) < 0.6 ? 0 : 1] : null;
 
     // 生きている節点と、パイプモデルによる太さ
     accR.fill(0); hasKid.fill(0);
@@ -480,13 +642,17 @@ function makeRenderer(tree, canvas) {
     const gy = H * 0.9, ox = W / 2 - ((bounds.minX + bounds.maxX) / 2) * s;
     const sx = (x) => ox + x * s, sy = (y) => gy - y * s;
 
-    // 空と地面
-    const [skyTop, skyBot, grass] = skyAt(d);
-    const g = ctx.createLinearGradient(0, 0, 0, gy);
+    // 空と地面(地面は幹の根元より少し奥から始まり、塀や電柱はその奥に立つ)
+    let [skyTop, skyBot, grass] = skyAt(d);
+    if (snow > 0) { skyTop = mixRgb(skyTop, [205, 211, 218], 0.7 * Math.min(1, snow * 1.5)); skyBot = mixRgb(skyBot, [232, 235, 238], 0.6 * Math.min(1, snow * 1.5)); }
+    const hz = gy - Math.max(8, 0.4 * s);
+    const g = ctx.createLinearGradient(0, 0, 0, hz);
     g.addColorStop(0, rgb(skyTop)); g.addColorStop(1, rgb(skyBot));
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, gy + 1);
-    ctx.fillStyle = rgb(grass); ctx.fillRect(0, gy, W, H - gy);
-    ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(0, gy, W, 1);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, hz + 1);
+    ctx.fillStyle = rgb(grass); ctx.fillRect(0, hz, W, H - hz);
+    if (snow > 0) { ctx.fillStyle = `rgba(246,248,250,${Math.min(0.95, snow * 1.6)})`; ctx.fillRect(0, hz, W, H - hz); }
+    drawBack(ctx, sx, hz + 3, s, W, snow);
+    ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(0, hz + 3, W, 1);
 
     // 木陰
     const shadeW = Math.max(0.4, (hi - lo) * 0.55) * s, shadeX = sx((lo + hi) / 2);
@@ -495,7 +661,7 @@ function makeRenderer(tree, canvas) {
 
     // 地面に散った花びら・落ち葉
     const groundRnd = mulberry32(CONFIG.seed + 7);
-    const gp = S.groundPetal * m, gl = S.groundLeaf * Math.min(1, ch / 4);
+    const gp = S.groundPetal * m, gl = S.groundLeaf * Math.min(1, ch / 4) * (1 - Math.min(1, snow * 2));
     for (let k = 0; k < 420; k++) {
       const u = groundRnd(), v = groundRnd(), w = groundRnd();
       const x = shadeX + (u - 0.5) * 2 * shadeW * 1.25 * Math.sqrt(v);
@@ -528,6 +694,23 @@ function makeRenderer(tree, canvas) {
       ctx.lineWidth = Math.max(0.6, 2 * rad[i] * s * (p === 0 ? 1.15 : 1));
       ctx.beginPath(); ctx.moveTo(sx(x0), sy(y0)); ctx.lineTo(sx(x1), sy(y1)); ctx.stroke();
     }
+
+    // 枝に積もった雪(水平に近い太めの枝の上側)
+    if (snow > 0.15) {
+      ctx.strokeStyle = WHITE;
+      for (let i = 1; i < N; i++) {
+        if (!alive[i] || rad[i] < 0.012) continue;
+        const p = PAR[i], ddx = X[i] - X[p], ddy = Y[i] - Y[p];
+        if (Math.abs(ddy) > Math.abs(ddx) * 1.1) continue;
+        const w = 2 * rad[i] * s;
+        ctx.lineWidth = Math.max(0.8, Math.min(4, w * 0.6) * snow);
+        const up = w * 0.5;
+        ctx.beginPath(); ctx.moveTo(sx(X[p]), sy(Y[p]) - up); ctx.lineTo(sx(X[i]), sy(Y[i]) - up); ctx.stroke();
+      }
+    }
+
+    // 手前の物
+    drawFront(ctx, sx, gy, H - gy, s, snow, bike);
 
     // 細い枝先:冬芽・つぼみ・花・葉
     const fine = P.tipR * 2.6;
@@ -590,7 +773,19 @@ function makeRenderer(tree, canvas) {
       }
     }
 
-    return { date, label: S.label, height: top, count };
+    // 降っている雪
+    if (SN.falling) {
+      const fr = mulberry32(CONFIG.seed + Math.floor(day) * 13);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      for (let k = 0; k < 260; k++) {
+        ctx.beginPath(); ctx.arc(fr() * W, fr() * H, 0.8 + fr() * 1.6, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    let label = S.label;
+    if (SN.falling) label = '降雪';
+    else if (snow > 0.15) label = '積雪';
+    return { date, label, height: top, count };
   }
 
   return { resize, draw };
