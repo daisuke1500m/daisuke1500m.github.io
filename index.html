@@ -1,4 +1,9 @@
-<title>一本桜プロトタイプ</title>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>蔵人桜</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,7 +33,7 @@
   --line: #2d3235; --accent: #e78aa8; --accent-soft: #3a2730; color-scheme: dark;
 }
 body {
-  background: var(--bg); color: var(--fg);
+  margin: 0; background: var(--bg); color: var(--fg);
   font-family: var(--font-body); font-size: 15px; line-height: 1.7;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -40,9 +45,16 @@ h1 { margin: 4px 0 6px; font-family: var(--font-display); font-weight: 700; font
 
 .stage { position: relative; border-radius: 6px; overflow: hidden; height: min(68vh, 560px); min-height: 340px; background: #dfe6ee; border: 1px solid var(--line); }
 .stage canvas { display: block; width: 100%; height: 100%; }
+
+/* 公開モード(?debug なし):操作UIと説明を隠し、木の画面だけをブラウザ全体に表示する */
+:root.public, :root.public body { height: 100%; overflow: hidden; }
+:root.public body { padding: 0; }
+:root.public .wrap { display: block; max-width: none; padding: 0; }
+:root.public .wrap > :not(.stage) { display: none; }
+:root.public .stage { position: fixed; inset: 0; height: auto; min-height: 0; border: 0; border-radius: 0; }
 [hidden] { display: none !important; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; color: #39403b; background: #e6eaee; }
-.season { position: absolute; top: 12px; right: 12px; padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,.82); color: #2a2f2c; font-weight: 700; font-size: 14px; letter-spacing: .06em; }
+.season { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,.82); color: #2a2f2c; font-weight: 700; font-size: 14px; letter-spacing: .06em; }
 
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; display: grid; gap: 16px; }
 .readout { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 28px; }
@@ -76,10 +88,16 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .notes code { font-family: var(--font-mono); font-size: 12.5px; background: var(--accent-soft); color: var(--fg); padding: 1px 5px; border-radius: 3px; }
 </style>
 
+<script>
+  // URL に ?debug(このページのプレビューでは #debug)が付いたときだけ操作UIを表示する
+  const DEBUG = new URLSearchParams(location.search).has('debug') || location.hash === '#debug';
+  if (!DEBUG) document.documentElement.classList.add('public');
+  addEventListener('hashchange', () => location.reload());
+</script>
 <main class="wrap">
   <header>
     <p class="eyebrow">SOMEI-YOSHINO · SPACE COLONIZATION</p>
-    <h1>一本桜 成長プロトタイプ</h1>
+    <h1>蔵人桜</h1>
     <p class="lede">2026年10月20日に苗木を1本植えたと仮定して、指定した日付の樹形と季節の姿を計算します。スライダーで40年先まで動かせます。</p>
   </header>
 
@@ -158,6 +176,7 @@ const P = {
   step: 1 / 24,   // 1ステップ = 約半月
   HMAX: 12,       // 樹冠の最終的な高さ
   trunk: 0.9,     // 苗木の幹の高さ(ここから上で枝分かれする)
+  straighten: 14, // 枝をまっすぐにする強さ(ならす回数)。0で元のうねった枝、大きいほど直線的
   leafAspect: 0.5, // 葉の幅 ÷ 葉の長さ。値を小さくすると葉が細く、大きくすると葉が幅広になります。
   tipR: 0.009,    // 枝先の半径
   pipeE: 2.2,     // パイプモデルの指数(2 = ダ・ヴィンチの法則)
@@ -360,6 +379,25 @@ function simulate() {
     }
     DEATH[i] = d;
   }
+
+  // 枝のうねりをならす:各節点を「親」と「主な子」の中点へ少しずつ寄せる。
+  // 細かなジグザグだけが消え、枝の分かれ方と大きなカーブはそのまま残る
+  const mainKid = new Int32Array(N).fill(-1);
+  for (let i = 1; i < N; i++) {
+    const p = PAR[i];
+    if (mainKid[p] < 0 || tips[i] > tips[mainKid[p]]) mainKid[p] = i;
+  }
+  for (let it = 0; it < P.straighten; it++) {
+    const nx = X.slice(), ny = Y.slice();
+    for (let i = 1; i < N; i++) {
+      const p = PAR[i], c = mainKid[i];
+      if (c < 0 || p < 0 || Y[i] <= P.trunk * 0.5) continue;   // 枝先と根元は動かさない
+      nx[i] = X[i] + 0.5 * ((X[p] + X[c]) / 2 - X[i]);
+      ny[i] = Y[i] + 0.5 * ((Y[p] + Y[c]) / 2 - Y[i]);
+    }
+    for (let i = 0; i < N; i++) { X[i] = nx[i]; Y[i] = ny[i]; }
+  }
+
   // 成木(シミュレーション最終年)の範囲。カメラをこの大きさに固定する
   let minX = 0, maxX = 0, maxY = 0;
   for (let i = 0; i < N; i++) {
@@ -379,7 +417,8 @@ function simulate() {
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 function seasonAt(d) {
   const s = {
-    budPink:   smooth(70, 80, d) * (1 - smooth(84, 90, d)),   // つぼみが膨らむ
+    bud:       smooth(60, 67, d) * (1 - smooth(84, 90, d)),   // つぼみが現れる(開花の約3週間前、3月初め)
+    budPink:   smooth(70, 80, d) * (1 - smooth(84, 90, d)),   // つぼみが膨らみ、桃色になる
     bloom:     smooth(80, 89, d) * (1 - smooth(96, 106, d)),  // 開花〜満開
     petalFall: smooth(93, 98, d) * (1 - smooth(104, 110, d)), // 花吹雪
     groundPetal: smooth(94, 100, d) * (1 - smooth(108, 122, d)),
@@ -393,13 +432,13 @@ function seasonAt(d) {
   if (s.petalFall > 0.35) label = '花吹雪';
   else if (s.bloom > 0.65) label = '満開';
   else if (s.bloom > 0.05 && d < 92) label = '開花';
-  else if (s.budPink > 0.2) label = 'つぼみ';
+  else if (s.budPink > 0.2 || s.bud > 0.3) label = 'つぼみ';
   else if (d >= 100 && d < 128) label = '葉桜';
   else if (d >= 128 && d < 170) label = '新緑';
   else if (d >= 170 && d < 258) label = '盛夏';
   else if (d >= 258 && d < 300) label = '紅葉';
   else if (d >= 300 && d < 338) label = '落葉';
-  else label = '冬芽・休眠';
+  else label = '休眠';
   s.label = label;
   return s;
 }
@@ -413,26 +452,61 @@ function mixRgb(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
 const rgb = (a, al = 1) => `rgba(${a.map(Math.round).join(',')},${al})`;
 
 // 季節ごとの空と地面(通算日をキーに補間)
+// [通算日, 空の上の色, 地平線近くの色, 地面の色, 春霞の濃さ 0〜1]
+// 3月初め〜9月初めは晴れ。春は水色に霞がかかり、夏は抜けるような青空
 const SKY = [
-  [15,  '#dfe5ec', '#f2f4f6', '#b8b29a'],
-  [95,  '#cddff0', '#f5eef1', '#a9bf80'],
-  [200, '#a8cbea', '#e7f1f7', '#7fa35b'],
-  [290, '#d6dce4', '#f3ebe1', '#b2a173'],
-  [380, '#dfe5ec', '#f2f4f6', '#b8b29a'],
+  [15,  '#dfe5ec', '#f2f4f6', '#b8b29a', 0],    // 冬:薄曇り
+  [55,  '#d6e2ec', '#f1f3f5', '#b4b096', 0],    // 2月下旬
+  [72,  '#96cfee', '#eef6f7', '#acb886', 1],    // 3月中旬:淡い水色、霞が濃い
+  [120, '#7fc3ec', '#eef6f3', '#a3c27c', 0.9],  // 4月末:春の水色
+  [160, '#57a5e6', '#d5ebf8', '#86ad60', 0.35], // 6月上旬:青みが増す
+  [195, '#2a78d6', '#b4d9f5', '#7aa358', 0],    // 7月中旬:夏の深い青
+  [245, '#2f7fd5', '#bddcf3', '#7d9f58', 0],    // 9月初め:まだ夏空
+  [290, '#d6dce4', '#f3ebe1', '#b2a173', 0],    // 10月中旬:秋の淡い空
+  [380, '#dfe5ec', '#f2f4f6', '#b8b29a', 0],
 ];
 function skyAt(d) {
   if (d < SKY[0][0]) d += 365;
   for (let i = 0; i < SKY.length - 1; i++) {
-    const [d0, a0, b0, g0] = SKY[i], [d1, a1, b1, g1] = SKY[i + 1];
+    const [d0, a0, b0, g0, h0] = SKY[i], [d1, a1, b1, g1, h1] = SKY[i + 1];
     if (d >= d0 && d <= d1) {
-      const t = (d - d0) / (d1 - d0);
-      return [mixRgb(hex(a0), hex(a1), t), mixRgb(hex(b0), hex(b1), t), mixRgb(hex(g0), hex(g1), t)];
+      const t = smooth(0, 1, (d - d0) / (d1 - d0));
+      return [mixRgb(hex(a0), hex(a1), t), mixRgb(hex(b0), hex(b1), t), mixRgb(hex(g0), hex(g1), t), h0 + (h1 - h0) * t];
     }
   }
-  return [hex(SKY[0][1]), hex(SKY[0][2]), hex(SKY[0][3])];
+  return [hex(SKY[0][1]), hex(SKY[0][2]), hex(SKY[0][3]), 0];
+}
+
+/* 春霞:地平線から立ちのぼる白い水蒸気の層と、空にたなびく薄い霞の帯 */
+function drawSpringHaze(ctx, W, Y, hz, k, seed) {
+  if (k < 0.02) return;
+  const g = ctx.createLinearGradient(0, Y(9), 0, hz);
+  g.addColorStop(0, 'rgba(250,252,250,0)');
+  g.addColorStop(0.55, `rgba(250,252,250,${0.28 * k})`);
+  g.addColorStop(1, `rgba(252,253,250,${0.6 * k})`);
+  ctx.fillStyle = g; ctx.fillRect(0, Y(9), W, hz - Y(9) + 1);
+  const r = mulberry32(seed);
+  for (let i = 0; i < 7; i++) {
+    const cy = Y(2.5 + r() * 8), cx = r() * W, rx = W * (0.25 + r() * 0.35), ry = 6 + r() * 14;
+    const eg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx);
+    eg.addColorStop(0, `rgba(255,255,255,${(0.16 + 0.1 * r()) * k})`);
+    eg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(1, ry / rx); ctx.translate(-cx, -cy);
+    ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(cx, cy, rx, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
 }
 
 const AUTUMN = ['#e3b53e', '#d9822f', '#c0502f', '#9e3038'];
+
+/* 舞う花びら(速さは m/秒) */
+const PETAL = {
+  wind: 0.7,      // 右へ流す風の強さ。大きいほど斜めに流れる
+  fall: 0.6,      // 落ちる速さ
+  maxRate: 220,   // 1秒あたりに舞い出る枚数の上限
+  max: 700,       // 画面に同時に出す枚数の上限
+  colors: ['rgba(246,200,214,0.97)', 'rgba(240,184,201,0.97)', 'rgba(251,226,233,0.97)'],
+};
 
 /* =========================================================
    積雪(冬の特に寒い時期だけ、年ごとにランダムに降る)
@@ -478,6 +552,126 @@ const SCENE = {
   bikeChance: 0.5,  // 自転車が置いてある確率(日ごとに決まる)
 };
 const WHITE = 'rgba(248,250,252,0.96)';
+
+
+/* =========================================================
+   遠くの山(雑木林に覆われた山が3つ)
+   ========================================================= */
+// 山の位置と大きさ(高さは画面の目盛りに合わせた見かけの高さ m)。上から順に遠い山
+const MOUNTAINS = [
+  { cx: -2,   peak: 6.4, hwL: 14, hwR: 11, haze: 0.42, seed: 11 },  // 奥:一番高い山
+  { cx: 10.5, peak: 5.0, hwL: 8,  hwR: 13, haze: 0.27, seed: 23 },  // 右:中くらいの山
+  { cx: -12,  peak: 3.8, hwL: 12, hwR: 9,  haze: 0.15, seed: 37 },  // 左手前:低い山
+];
+// 雑木林の季節の色:[通算日, 地の色, 木々の色4つ]
+const MT_COLORS = [
+  [15,  '#6b564a', ['#5e4a40', '#7a6252', '#544239', '#86705f']],  // 冬:落葉して焦げ茶
+  [85,  '#715a4b', ['#64503f', '#80665a', '#5a4740', '#8a6f63']],  // 芽吹き前
+  [112, '#8fae68', ['#a9c47a', '#86a85e', '#c9d79a', '#e8dcdc']],  // 春:新緑と山桜
+  [160, '#5f8f4c', ['#6f9e55', '#4f7f40', '#86b063', '#5a8a48']],  // 初夏
+  [225, '#4b7442', ['#567f48', '#3f6438', '#638c50', '#4a6f40']],  // 夏:濃い緑
+  [285, '#7d7f48', ['#8f8a45', '#6d7442', '#a3873f', '#5f6a3e']],  // 色づき始め
+  [312, '#a36a3c', ['#c8562f', '#dca043', '#9b3a2e', '#7f7a40']],  // 紅葉の盛り
+  [340, '#7a5c48', ['#8a5a3e', '#9a7a52', '#664c3e', '#7c6650']],  // 晩秋
+  [380, '#6b564a', ['#5e4a40', '#7a6252', '#544239', '#86705f']],
+];
+function mtColorsAt(d) {
+  if (d < MT_COLORS[0][0]) d += 365;
+  for (let i = 0; i < MT_COLORS.length - 1; i++) {
+    const [d0, b0, c0] = MT_COLORS[i], [d1, b1, c1] = MT_COLORS[i + 1];
+    if (d >= d0 && d <= d1) {
+      const t = (d - d0) / (d1 - d0);
+      return { base: mixRgb(hex(b0), hex(b1), t), dots: c0.map((c, k) => mixRgb(hex(c), hex(c1[k]), t)) };
+    }
+  }
+  const [, b, c] = MT_COLORS[0];
+  return { base: hex(b), dots: c.map(hex) };
+}
+function mtTop(M, x) {
+  const u = x - M.cx, a = Math.abs(u) / (u < 0 ? M.hwL : M.hwR);
+  if (a >= 1) return 0;
+  const k = M.seed;
+  let h = M.peak * Math.pow(1 - a, 1.2) * (1 + 0.18 * a);
+  h += M.peak * 0.06 * Math.sqrt(1 - a) * (Math.sin(x * 0.7 + k) + 0.6 * Math.sin(x * 1.9 + 2 * k) + 0.3 * Math.sin(x * 4.3 + 3 * k));
+  h += 0.05 * Math.sin(x * 11 + k) + 0.03 * Math.sin(x * 23 + k);   // 樹冠の細かな凹凸
+  return Math.max(0, h);
+}
+
+function drawMountains(ctx, sx, Y, s, W, base, d, snow, haze) {
+  const pal = mtColorsAt(d);
+  const x0 = sx(0);
+  for (const M of MOUNTAINS) {
+    const rnd = mulberry32(M.seed * 977);
+    // 稜線の形
+    const path = new Path2D();
+    path.moveTo(-2, base);
+    for (let X = -2; X <= W + 4; X += 3) {
+      const h = mtTop(M, (X - x0) / s);
+      path.lineTo(X, h > 0 ? Y(h) : base);
+    }
+    path.lineTo(W + 4, base); path.closePath();
+    ctx.fillStyle = rgb(pal.base); ctx.fill(path);
+    ctx.save(); ctx.clip(path);
+
+    // 光は左上から:山全体の陰影
+    const gl = ctx.createLinearGradient(sx(M.cx - M.hwL), 0, sx(M.cx + M.hwR), 0);
+    gl.addColorStop(0, 'rgba(255,248,228,0.12)');
+    gl.addColorStop(0.45, 'rgba(255,248,228,0)');
+    gl.addColorStop(1, 'rgba(20,24,40,0.25)');
+    ctx.fillStyle = gl; ctx.fillRect(0, Y(M.peak + 1), W, base - Y(M.peak + 1));
+
+    // 雑木林:木々の樹冠を一つずつ、上側を明るく下側を暗く描いて丸みを出す
+    const r = Math.max(1.1, 0.15 * s * (1 - M.haze * 0.8));
+    const n = Math.round((M.hwL + M.hwR) * M.peak * 11);
+    for (let k = 0; k < n; k++) {
+      const x = M.cx - M.hwL + rnd() * (M.hwL + M.hwR), y = rnd() * M.peak;
+      const ci = Math.floor(rnd() * 4), j = 0.9 + rnd() * 0.2, rr = r * (0.7 + rnd() * 0.6);
+      if (y > mtTop(M, x)) continue;
+      const c = pal.dots[ci].map((v) => v * j);
+      const X = sx(x), YY = Y(y);
+      ctx.fillStyle = rgb(c.map((v) => v * 0.72));
+      ctx.beginPath(); ctx.arc(X + rr * 0.25, YY + rr * 0.3, rr, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = rgb(c);
+      ctx.beginPath(); ctx.arc(X - rr * 0.15, YY - rr * 0.15, rr * 0.8, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 尾根と谷:尾根の右側(光の当たらない面)に影、左側にわずかな照り
+    const spurs = [M.cx];
+    for (let k = 0; k < 5; k++) spurs.push(M.cx + (rnd() * 2 - 1) * 0.8 * (rnd() < 0.5 ? M.hwL : M.hwR));
+    spurs.forEach((xs, k) => {
+      const top = mtTop(M, xs); if (top <= 0.3) return;
+      const hw = xs < M.cx ? M.hwL : M.hwR;
+      const bw = k === 0 ? 0.32 * M.hwR : (0.08 + 0.08 * rnd()) * hw;
+      const drift = Math.sign(xs - M.cx || 1) * hw * (0.1 + 0.15 * rnd());
+      const ph = rnd() * 6;
+      const L = [], R = [], HL = [];
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12, y = top * (1 - t);
+        const x = xs + drift * t * t + 0.25 * Math.sin(t * 5 + ph) * t;
+        const w = bw * (0.15 + 0.85 * t);
+        L.push([sx(x), Y(y)]); R.push([sx(x + w), Y(y)]); HL.push([sx(x - w * 0.3), Y(y)]);
+      }
+      const band = (a, b, col) => {
+        ctx.beginPath(); ctx.moveTo(...a[0]);
+        for (const q of a) ctx.lineTo(...q);
+        for (let i = b.length - 1; i >= 0; i--) ctx.lineTo(...b[i]);
+        ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+      };
+      band(L, R, k === 0 ? 'rgba(22,26,44,0.24)' : 'rgba(22,26,44,0.2)');
+      band(HL, L, 'rgba(255,246,222,0.1)');
+    });
+
+    // 里に雪が積もった日は山もうっすら白く
+    if (snow > 0.02) { ctx.fillStyle = `rgba(240,243,247,${0.55 * Math.min(1, snow * 1.4)})`; ctx.fill(path); }
+
+    // 遠いほど空の色にかすむ(空気遠近法)。裾はさらに白っぽく
+    ctx.fillStyle = rgb(haze, M.haze); ctx.fill(path);
+    const gb = ctx.createLinearGradient(0, Y(M.peak), 0, base);
+    gb.addColorStop(0, rgb(haze, 0)); gb.addColorStop(1, rgb(haze, 0.35));
+    ctx.fillStyle = gb; ctx.fill(path);
+    ctx.restore();
+  }
+}
 
 /* 奥:板塀・電柱・電線 */
 function drawBack(ctx, sx, base, s, W, snow) {
@@ -595,17 +789,22 @@ function drawFront(ctx, sx, gy, groundH, s, snow, bike) {
 
 function makeRenderer(tree, canvas) {
   const { N, X, Y, PAR, BIRTH, DEATH, bounds } = tree;
-  const ctx = canvas.getContext('2d');
+  // 木や景色は日付が変わったときだけ裏のキャンバス(buf)に描き、
+  // 表のキャンバスには毎フレーム「buf の画像+舞う花びら」だけを描く
+  const out = canvas.getContext('2d');
+  const buf = document.createElement('canvas');
+  const ctx = buf.getContext('2d');
+  let dpr = 1;
   const accR = new Float64Array(N), rad = new Float64Array(N);
   const alive = new Uint8Array(N), hasKid = new Uint8Array(N);
   const E = P.pipeE, tipE = Math.pow(P.tipR, E);
   let W = 0, H = 0;
 
   function resize() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    dpr = Math.min(2, window.devicePixelRatio || 1);
     const r = canvas.getBoundingClientRect();
     W = r.width; H = r.height;
-    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    canvas.width = buf.width = Math.round(W * dpr); canvas.height = buf.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -637,18 +836,24 @@ function makeRenderer(tree, canvas) {
     // カメラ:成木がちょうど収まる位置に固定(若木は小さく見える)
     const ch = crownH(t);
     const spanX = (bounds.maxX - bounds.minX) * 1.08;
-    const s = Math.min((H * 0.8) / (bounds.maxY * 1.04), (W * 0.94) / spanX);
+    // 縦長の画面(スマートフォン)では、成木の左右の端が少し切れるのを許して木を大きく見せる
+    const sFitW = (W * 0.94) / spanX, sFitH = (H * 0.8) / (bounds.maxY * 1.04);
+    const s = Math.min(sFitH, H > W ? sFitW * 1.4 : sFitW);
     const viewM = (H * 0.86) / s;
     const gy = H * 0.9, ox = W / 2 - ((bounds.minX + bounds.maxX) / 2) * s;
     const sx = (x) => ox + x * s, sy = (y) => gy - y * s;
 
     // 空と地面(地面は幹の根元より少し奥から始まり、塀や電柱はその奥に立つ)
-    let [skyTop, skyBot, grass] = skyAt(d);
+    let [skyTop, skyBot, grass, springHaze] = skyAt(d);
     if (snow > 0) { skyTop = mixRgb(skyTop, [205, 211, 218], 0.7 * Math.min(1, snow * 1.5)); skyBot = mixRgb(skyBot, [232, 235, 238], 0.6 * Math.min(1, snow * 1.5)); }
     const hz = gy - Math.max(8, 0.4 * s);
     const g = ctx.createLinearGradient(0, 0, 0, hz);
-    g.addColorStop(0, rgb(skyTop)); g.addColorStop(1, rgb(skyBot));
+    g.addColorStop(0, rgb(skyTop)); g.addColorStop(0.62, rgb(mixRgb(skyTop, skyBot, 0.45))); g.addColorStop(1, rgb(skyBot));
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, hz + 1);
+    const Ym = (m) => gy - m * s;
+    drawSpringHaze(ctx, W, Ym, hz, springHaze * 0.6, CONFIG.seed + 3);         // 山の奥の霞
+    drawMountains(ctx, sx, Ym, s, W, hz + 2, d, snow, skyBot);
+    drawSpringHaze(ctx, W, Ym, hz, springHaze * 0.55, CONFIG.seed + Math.floor(day / 3)); // 山の手前の霞
     ctx.fillStyle = rgb(grass); ctx.fillRect(0, hz, W, H - hz);
     if (snow > 0) { ctx.fillStyle = `rgba(246,248,250,${Math.min(0.95, snow * 1.6)})`; ctx.fillRect(0, hz, W, H - hz); }
     drawBack(ctx, sx, hz + 3, s, W, snow);
@@ -671,12 +876,12 @@ function makeRenderer(tree, canvas) {
     }
 
     // 目盛り(メートル)
-    const tick = viewM > 8 ? 2 : 1;
+    const tick = viewM > 8 ? 2 : 1, rulerTop = Math.min(viewM * 0.98, 16.5);
     ctx.strokeStyle = 'rgba(30,40,40,0.35)'; ctx.fillStyle = 'rgba(30,40,40,0.6)';
     ctx.lineWidth = 1; ctx.font = '11px "IBM Plex Mono", monospace'; ctx.textBaseline = 'middle';
     const rx = 18;
-    ctx.beginPath(); ctx.moveTo(rx, gy); ctx.lineTo(rx, sy(Math.floor(viewM * 0.98 / tick) * tick)); ctx.stroke();
-    for (let mm = tick; mm < viewM * 0.98; mm += tick) {
+    ctx.beginPath(); ctx.moveTo(rx, gy); ctx.lineTo(rx, sy(Math.floor(rulerTop / tick) * tick)); ctx.stroke();
+    for (let mm = tick; mm < rulerTop; mm += tick) {
       const yy = sy(mm);
       ctx.beginPath(); ctx.moveTo(rx, yy); ctx.lineTo(rx + 6, yy); ctx.stroke();
       ctx.fillText(mm + ' m', rx + 9, yy);
@@ -714,6 +919,8 @@ function makeRenderer(tree, canvas) {
 
     // 細い枝先:冬芽・つぼみ・花・葉
     const fine = P.tipR * 2.6;
+    const fallOn = m > 0 && (S.petalFall > 0.01 || S.bloom > 0.6);
+    emit = [];
     const px = (mtr, min) => Math.max(min, mtr * s);
     for (let i = 1; i < N; i++) {
       if (!alive[i] || rad[i] > fine) continue;
@@ -744,6 +951,8 @@ function makeRenderer(tree, canvas) {
         ctx.fillStyle = '#d97d97';
         ctx.beginPath(); ctx.arc(fx, fy, px(0.03, 1), 0, Math.PI * 2); ctx.fill();
       }
+      // 花びらが舞い出る枝先(花の付く枝先だけ)
+      if (fallOn && hash(i, 9) < Math.max(S.bloom, 0.5) * m) emit.push(X[i], Y[i]);
       // 花
       if (S.bloom > 0.01 && hash(i, 9) < S.bloom * m) {
         for (let k = 0; k < 5; k++) {
@@ -753,25 +962,17 @@ function makeRenderer(tree, canvas) {
           ctx.beginPath(); ctx.arc(ax, ay, px(0.045, 1.3), 0, Math.PI * 2); ctx.fill();
         }
       }
-      // 冬芽(葉も花もない時期の枝先)
-      if (!hasKid[i] && S.leaf < 0.05 && S.bloom < 0.05 && S.budPink < 0.1) {
+      // 膨らみ始めのつぼみ(3月初めから。冬の間は枝だけにする)
+      if (!hasKid[i] && S.bud > 0.02 && hash(i, 60) < S.bud && S.bloom < 0.05 && S.budPink < 0.3) {
         ctx.fillStyle = '#7a3f3f';
-        ctx.beginPath(); ctx.arc(sx(X[i]), sy(Y[i]), 1.1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx(X[i]), sy(Y[i]), 0.6 + 0.6 * S.bud, 0, Math.PI * 2); ctx.fill();
       }
     }
 
-    // 舞う花びら
-    if (S.petalFall > 0.01 && m > 0) {
-      const pr = mulberry32(CONFIG.seed + Math.floor(day * 3));
-      const cnt = Math.round(300 * S.petalFall * m * Math.min(1.4, Math.max(0.25, ch / 7)));
-      ctx.fillStyle = 'rgba(248,220,228,0.95)';
-      for (let k = 0; k < cnt; k++) {
-        const x = lo - 0.3 + pr() * (hi - lo + 0.6), y = pr() * top * 1.05;
-        ctx.save(); ctx.translate(sx(x), sy(y)); ctx.rotate(pr() * Math.PI);
-        ctx.beginPath(); ctx.ellipse(0, 0, 2.6, 1.5, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
-      }
-    }
+    // 舞う花びらの設定:散り始め〜花吹雪で多く、満開のころは時々
+    view = { s, ox, gy, groundM: (H - gy) * 0.85 / s };
+    rate = fallOn ? (S.petalFall + 0.06 * S.bloom) * Math.min(PETAL.maxRate, (emit.length / 2) * 0.35) : 0;
+    if (!fallOn) parts.length = 0;
 
     // 降っている雪
     if (SN.falling) {
@@ -785,7 +986,81 @@ function makeRenderer(tree, canvas) {
     let label = S.label;
     if (SN.falling) label = '降雪';
     else if (snow > 0.15) label = '積雪';
+    composite();
+    ensureRunning();
     return { date, label, height: top, count };
+  }
+
+  /* ---------- 舞う花びらのアニメーション ---------- */
+  const parts = [];
+  let emit = [], rate = 0, view = null, carry = 0, last = 0, clock = 0, running = false;
+  const reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  function petal(x, y, rx, flip, rot, c) {
+    out.fillStyle = c;
+    out.beginPath();
+    out.ellipse(x, y, rx, Math.max(0.5, rx * 0.62 * Math.abs(Math.cos(flip))), rot, 0, Math.PI * 2);
+    out.fill();
+  }
+
+  function composite() {
+    out.setTransform(1, 0, 0, 1, 0, 0);
+    out.drawImage(buf, 0, 0);
+    out.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!view) return;
+    const { s, ox, gy } = view;
+    const base = Math.max(2.8, 0.045 * s);
+    if (reduce) {
+      // 動きを減らす設定のときは、枝先から右下へ流れた位置に止めて描く
+      const r = mulberry32(CONFIG.seed + 99), n = emit.length / 2;
+      const cnt = Math.min(PETAL.max / 2, Math.round(rate * 2));
+      for (let k = 0; k < cnt && n; k++) {
+        const j = Math.floor(r() * n), d = r() * 3;
+        petal(ox + (emit[2 * j] + d * 0.8) * s, gy - (emit[2 * j + 1] - d) * s, base * (0.8 + r() * 0.5), r() * 6, r() * 6, PETAL.colors[k % PETAL.colors.length]);
+      }
+      return;
+    }
+    for (const p of parts) petal(ox + p.x * s, gy - p.y * s, base * p.sz, p.flip, p.rot, p.c);
+  }
+
+  function spawn() {
+    const j = Math.floor(Math.random() * (emit.length / 2));
+    parts.push({
+      x: emit[2 * j] + (Math.random() - 0.5) * 0.25, y: emit[2 * j + 1] + (Math.random() - 0.5) * 0.2,
+      vx: 0.2, k: Math.random(), ph: Math.random() * 6.3, flip: Math.random() * 6.3,
+      rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 4, sz: 0.8 + Math.random() * 0.5,
+      land: -Math.random() * view.groundM, c: PETAL.colors[Math.floor(Math.random() * PETAL.colors.length)],
+    });
+  }
+
+  function tick(ts) {
+    const dt = last ? Math.min(0.05, (ts - last) / 1000) : 0;
+    last = ts; clock += dt;
+    if (rate > 0 && emit.length) {
+      carry += rate * dt;
+      while (carry >= 1 && parts.length < PETAL.max) { spawn(); carry -= 1; }
+      if (carry > 1) carry = 0;
+    }
+    // 右向きの風。ときどき強く吹く
+    const wind = PETAL.wind * (1 + 0.6 * Math.sin(clock * 0.5) + 0.3 * Math.sin(clock * 1.7 + 1));
+    const right = (W - view.ox) / view.s + 1;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.vx += (wind * (0.7 + 0.6 * p.k) - p.vx) * Math.min(1, dt * 1.2);
+      p.ph += dt * (1.5 + 2 * p.k); p.flip += dt * (3 + 4 * p.k); p.rot += dt * p.spin;
+      p.x += (p.vx + 0.25 * Math.cos(p.ph)) * dt;
+      p.y -= (PETAL.fall * (0.75 + 0.5 * p.k) + 0.2 * Math.sin(p.ph)) * dt;
+      if (p.y < p.land || p.x > right) parts.splice(i, 1);   // 地面に着いたか画面の外へ出た
+    }
+    composite();
+    if (parts.length || rate > 0) requestAnimationFrame(tick);
+    else { running = false; last = 0; }
+  }
+
+  function ensureRunning() {
+    if (reduce || running || !view || !(rate > 0 || parts.length)) return;
+    running = true; last = 0;
+    requestAnimationFrame(tick);
   }
 
   return { resize, draw };
@@ -867,8 +1142,8 @@ if (typeof document !== 'undefined') {
   }
   playBtn.addEventListener('click', () => setPlaying(!playing));
 
-  // ?date=2036-04-01 のように日付を指定して開ける(自分のサイトで公開したとき用)
-  const q = new URLSearchParams(location.search).get('date');
+  // デバッグモードでは ?debug&date=2036-04-01 のように日付を指定して開ける
+  const q = DEBUG ? new URLSearchParams(location.search).get('date') : null;
   if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) {
     const [y, m, d] = q.split('-').map(Number);
     day = clampDay(dayIndexOf(new Date(y, m - 1, d)));
@@ -883,6 +1158,13 @@ if (typeof document !== 'undefined') {
     $('loading').hidden = true;
     update();
     new ResizeObserver(() => { renderer.resize(); update(); }).observe($('stage'));
+    // 公開モードでは、開いたまま日付が変わっても今日の姿に進める
+    if (!DEBUG) setInterval(() => {
+      const today = clampDay(dayIndexOf(new Date()));
+      if (today !== Math.floor(day)) { day = today; update(); }
+    }, 60000);
   }, 30);
 }
 </script>
+
+</html>
